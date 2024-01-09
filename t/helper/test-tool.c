@@ -5,7 +5,7 @@
 #include "parse-options.h"
 
 static const char * const test_tool_usage[] = {
-	"test-tool [-C <directory>] <command [<arguments>...]]",
+	"test-tool [-C <directory>] <command> [<arguments>...]]",
 	NULL
 };
 
@@ -100,7 +100,7 @@ static NORETURN void die_usage(void)
 {
 	size_t i;
 
-	fprintf(stderr, "usage: test-tool <toolname> [args]\n");
+	fprintf(stderr, "usage: %s\n", test_tool_usage[0]);
 	for (i = 0; i < ARRAY_SIZE(cmds); i++)
 		fprintf(stderr, "  %s\n", cmds[i].name);
 	exit(128);
