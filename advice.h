@@ -10,7 +10,7 @@ struct string_list;
  * Add the new config variable to Documentation/config/advice.txt.
  * Call advise_if_enabled to print your advice.
  */
- enum advice_type {
+enum advice_type {
 	ADVICE_ADD_EMBEDDED_REPO,
 	ADVICE_ADD_EMPTY_PATHSPEC,
 	ADVICE_ADD_IGNORED_FILE,
@@ -50,6 +50,7 @@ struct string_list;
 	ADVICE_WAITING_FOR_EDITOR,
 	ADVICE_SKIPPED_CHERRY_PICKS,
 	ADVICE_WORKTREE_ADD_ORPHAN,
+	ADVICE_ADVICE_OFF,
 };
 
 int git_default_advice_config(const char *var, const char *value);
