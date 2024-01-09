@@ -3,9 +3,10 @@
 #include "test-tool-utils.h"
 #include "trace2.h"
 #include "parse-options.h"
+#include "config.h"
 
 static const char * const test_tool_usage[] = {
-	"test-tool [-C <directory>] <command> [<arguments>...]]",
+	"test-tool [-C <directory>] [-c <name>=<value>] <command> [<arguments>...]",
 	NULL
 };
 
@@ -106,6 +107,13 @@ static NORETURN void die_usage(void)
 	exit(128);
 }
 
+static int parse_config_option(const struct option *opt, const char *arg,
+			       int unset)
+{
+	git_config_push_parameter(arg);
+	return 0;
+}
+
 int cmd_main(int argc, const char **argv)
 {
 	int i;
@@ -113,6 +121,9 @@ int cmd_main(int argc, const char **argv)
 	struct option options[] = {
 		OPT_STRING('C', NULL, &working_directory, "directory",
 			   "change the working directory"),
+		OPT_CALLBACK('c', NULL, NULL, "<name>=<value>",
+			   "pass a configuration parameter to the command",
+			   parse_config_option),
 		OPT_END()
 	};
 
