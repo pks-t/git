@@ -13,6 +13,12 @@ https://developers.google.com/open-source/licenses/bsd
 #include "reftable-blocksource.h"
 #include "reftable-error.h"
 
+#if defined(NO_MMAP)
+static int use_mmap = 0;
+#else
+static int use_mmap = 1;
+#endif
+
 static void strbuf_return_block(void *b, struct reftable_block *dest)
 {
 	if (dest->len)
@@ -78,6 +84,7 @@ struct reftable_block_source malloc_block_source(void)
 struct file_block_source {
 	int fd;
 	uint64_t size;
+	unsigned char *data;
 };
 
 static uint64_t file_size(void *b)
@@ -87,18 +94,22 @@ static uint64_t file_size(void *b)
 
 static void file_return_block(void *b, struct reftable_block *dest)
 {
-	if (dest->len)
-		memset(dest->data, 0xff, dest->len);
-	reftable_free(dest->data);
 }
 
-static void file_close(void *b)
+static void file_close(void *v)
 {
-	int fd = ((struct file_block_source *)b)->fd;
-	if (fd > 0) {
-		close(fd);
-		((struct file_block_source *)b)->fd = 0;
+	struct file_block_source *b = v;
+
+	if (b->fd >= 0) {
+		close(b->fd);
+		b->fd = -1;
 	}
+
+	if (use_mmap)
+		munmap(b->data, b->size);
+	else
+		reftable_free(b->data);
+	b->data = NULL;
 
 	reftable_free(b);
 }
@@ -108,9 +119,7 @@ static int file_read_block(void *v, struct reftable_block *dest, uint64_t off,
 {
 	struct file_block_source *b = v;
 	assert(off + size <= b->size);
-	dest->data = reftable_malloc(size);
-	if (pread_in_full(b->fd, dest->data, size, off) != size)
-		return -1;
+	dest->data = b->data + off;
 	dest->len = size;
 	return size;
 }
@@ -127,8 +136,10 @@ int reftable_block_source_from_file(struct reftable_block_source *bs,
 {
 	struct stat st = { 0 };
 	int err = 0;
-	int fd = open(name, O_RDONLY);
+	int fd;
 	struct file_block_source *p = NULL;
+
+	fd = open(name, O_RDONLY);
 	if (fd < 0) {
 		if (errno == ENOENT) {
 			return REFTABLE_NOT_EXIST_ERROR;
@@ -144,7 +155,18 @@ int reftable_block_source_from_file(struct reftable_block_source *bs,
 
 	p = reftable_calloc(sizeof(struct file_block_source));
 	p->size = st.st_size;
-	p->fd = fd;
+	if (use_mmap) {
+		p->data = xmmap(NULL, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+		p->fd = fd;
+	} else {
+		p->data = xmalloc(st.st_size);
+		if (read_in_full(fd, p->data, st.st_size) != st.st_size) {
+			close(fd);
+			return -1;
+		}
+		close(fd);
+		p->fd = -1;
+	}
 
 	assert(!bs->ops);
 	bs->ops = &file_vtable;
