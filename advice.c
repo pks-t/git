@@ -80,6 +80,7 @@ static struct {
 	[ADVICE_WAITING_FOR_EDITOR]			= { "waitingForEditor", 1 },
 	[ADVICE_WORKTREE_ADD_ORPHAN]			= { "worktreeAddOrphan", 1 },
 	[ADVICE_FORCE_DELETE_BRANCH]			= { "forceDeleteBranch", 1 },
+	[ADVICE_ADVICE_OFF]				= { "adviceOff", 1 },
 };
 
 static const char turn_off_instructions[] =
@@ -94,7 +95,7 @@ static void vadvise(const char *advice, int display_instructions,
 
 	strbuf_vaddf(&buf, advice, params);
 
-	if (display_instructions)
+	if (display_instructions && advice_enabled(ADVICE_ADVICE_OFF))
 		strbuf_addf(&buf, turn_off_instructions, key);
 
 	for (cp = buf.buf; *cp; cp = np) {

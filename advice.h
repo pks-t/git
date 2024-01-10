@@ -51,6 +51,7 @@ enum advice_type {
 	ADVICE_SKIPPED_CHERRY_PICKS,
 	ADVICE_WORKTREE_ADD_ORPHAN,
 	ADVICE_FORCE_DELETE_BRANCH,
+	ADVICE_ADVICE_OFF,
 };
 
 int git_default_advice_config(const char *var, const char *value);
