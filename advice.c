@@ -79,6 +79,7 @@ static struct {
 	[ADVICE_UPDATE_SPARSE_PATH]			= { "updateSparsePath", 1 },
 	[ADVICE_WAITING_FOR_EDITOR]			= { "waitingForEditor", 1 },
 	[ADVICE_WORKTREE_ADD_ORPHAN]			= { "worktreeAddOrphan", 1 },
+	[ADVICE_FORCE_DELETE_BRANCH]			= { "forceDeleteBranch", 1 },
 };
 
 static const char turn_off_instructions[] =
