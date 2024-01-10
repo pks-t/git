@@ -142,4 +142,7 @@ advice.*::
 		Advice shown when a user tries to create a worktree from an
 		invalid reference, to instruct how to create a new unborn
 		branch instead.
+	forceDeleteBranch::
+		Advice shown when a user tries to delete a not fully merged
+		branch without the force option set.
 --
