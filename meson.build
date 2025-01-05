@@ -170,7 +170,7 @@
 
 project('git', 'c',
   meson_version: '>=0.61.0',
-  version: 'v2.47.GIT',
+  version: files('GIT-VERSION'),
 )
 
 fs = import('fs')

@@ -1,7 +1,5 @@
 #!/bin/sh
 
-DEF_VER=v2.48.0-rc1
-
 LF='
 '
 
@@ -25,6 +23,8 @@ if test -n "$OUTPUT" && test -n "$MESON_DIST_ROOT"
 then
     OUTPUT="$MESON_DIST_ROOT/$OUTPUT"
 fi
+
+DEF_VER=$(cat "$SOURCE_DIR"/GIT-VERSION)
 
 # Protect us from reading Git version information outside of the Git directory
 # in case it is not a repository itself, but embedded in an unrelated
