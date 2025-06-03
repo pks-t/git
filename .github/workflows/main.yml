@@ -301,7 +301,13 @@ jobs:
         path: build
     - name: Test
       shell: pwsh
-      run: meson test -C build --list | Select-Object -Skip 1 | Select-String .* | Group-Object -Property { $_.LineNumber % 10 } | Where-Object Name -EQ ${{ matrix.nr }} | ForEach-Object { meson test -C build --no-rebuild --print-errorlogs $_.Group }
+      run: meson test -C build --list | Select-Object -Skip 1 | Select-String .* | Group-Object -Property { $_.LineNumber % 10 } | Where-Object Name -EQ ${{ matrix.nr }} | ForEach-Object { meson test -C build --no-rebuild --test-args=-x --print-errorlogs $_.Group }
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      timeout-minutes: 60
+      with:
+        name: meson-testlog-${{matrix.nr}}.txt
+        path: build/meson-logs/testlog.txt
 
   regular:
     name: ${{matrix.vector.jobname}} (${{matrix.vector.pool}})
