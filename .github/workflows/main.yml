@@ -22,6 +22,6 @@ jobs:
       shell: pwsh
       run: meson compile -C build
     - name: Test
-      shell: pwsh
+      shell: bash
       timeout-minutes: 5
       run: meson test -C build t5410-receive-pack -i --test-args=-x
