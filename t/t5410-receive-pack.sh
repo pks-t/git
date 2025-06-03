@@ -51,7 +51,7 @@ test_expect_success 'receive-pack missing objects fails connectivity check' '
 
 	# Capture git-send-pack(1) output sent to git-receive-pack(1).
 	git -C repo send-pack ../setup.git --all \
-		--receive-pack="tee ../out | git-receive-pack" &&
+		--receive-pack="tee ../out | git receive-pack" &&
 
 	# Replay captured git-send-pack(1) output on new empty repository.
 	git init --bare remote.git &&
@@ -72,7 +72,7 @@ test_expect_success 'receive-pack missing objects bypasses connectivity check' '
 
 	# Capture git-send-pack(1) output sent to git-receive-pack(1).
 	git -C repo send-pack ../setup.git --all \
-		--receive-pack="tee ../out | git-receive-pack" &&
+		--receive-pack="tee ../out | git receive-pack" &&
 
 	# Replay captured git-send-pack(1) output on new empty repository.
 	git init --bare remote.git &&
