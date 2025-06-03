@@ -139,12 +139,7 @@ invalid_variable_name='${foo.bar}'
 
 actual="$TRASH_DIRECTORY/actual"
 
-if test_have_prereq MINGW
-then
-	ROOT="$(pwd -W)"
-else
-	ROOT="$(pwd)"
-fi
+ROOT="$(pwd)"
 
 test_expect_success 'setup for __git_find_repo_path/__gitdir tests' '
 	mkdir -p subdir/subsubdir &&
@@ -2596,6 +2591,8 @@ test_expect_success 'double dash "git checkout"' '
 	--merge Z
 	--conflict=Z
 	--patch Z
+	--unified=Z
+	--inter-hunk-context=Z
 	--ignore-skip-worktree-bits Z
 	--ignore-other-worktrees Z
 	--recurse-submodules Z

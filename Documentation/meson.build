@@ -141,6 +141,7 @@ manpages = {
   'git-status.adoc' : 1,
   'git-stripspace.adoc' : 1,
   'git-submodule.adoc' : 1,
+  'git-survey.adoc' : 1,
   'git-svn.adoc' : 1,
   'git-switch.adoc' : 1,
   'git-symbolic-ref.adoc' : 1,
@@ -158,7 +159,6 @@ manpages = {
   'git-verify-tag.adoc' : 1,
   'git-version.adoc' : 1,
   'git-web--browse.adoc' : 1,
-  'git-whatchanged.adoc' : 1,
   'git-worktree.adoc' : 1,
   'git-write-tree.adoc' : 1,
   'git.adoc' : 1,
@@ -207,6 +207,7 @@ manpages = {
 
 manpages_breaking_changes = {
   'git-pack-redundant.adoc' : 1,
+  'git-whatchanged.adoc' : 1,
 }
 
 if not get_option('breaking_changes')

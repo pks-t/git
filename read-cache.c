@@ -20,7 +20,7 @@
 #include "refs.h"
 #include "dir.h"
 #include "object-file.h"
-#include "object-store.h"
+#include "odb.h"
 #include "oid-array.h"
 #include "tree.h"
 #include "commit.h"
@@ -254,7 +254,7 @@ static int ce_compare_link(const struct cache_entry *ce, size_t expected_size)
 	if (strbuf_readlink(&sb, ce->name, expected_size))
 		return -1;
 
-	buffer = repo_read_object_file(the_repository, &ce->oid, &type, &size);
+	buffer = odb_read_object(the_repository->objects, &ce->oid, &type, &size);
 	if (buffer) {
 		if (size == sb.len)
 			match = memcmp(buffer, sb.buf, size);
@@ -471,6 +471,17 @@ int ie_modified(struct index_state *istate,
 	 * then we know it is.
 	 */
 	if ((changed & DATA_CHANGED) &&
+#ifdef GIT_WINDOWS_NATIVE
+	    /*
+	     * Work around Git for Windows v2.27.0 fixing a bug where symlinks'
+	     * target path lengths were not read at all, and instead recorded
+	     * as 4096: now, all symlinks would appear as modified.
+	     *
+	     * So let's just special-case symlinks with a target path length
+	     * (i.e. `sd_size`) of 4096 and force them to be re-checked.
+	     */
+	    (!S_ISLNK(st->st_mode) || ce->ce_stat_data.sd_size != MAX_LONG_PATH) &&
+#endif
 	    (S_ISGITLINK(ce->ce_mode) || ce->ce_stat_data.sd_size != 0))
 		return changed;
 
@@ -1504,6 +1515,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	typechange_fmt = in_porcelain ? "T\t%s\n" : "%s: needs update\n";
 	added_fmt      = in_porcelain ? "A\t%s\n" : "%s: needs update\n";
 	unmerged_fmt   = in_porcelain ? "U\t%s\n" : "%s: needs merge\n";
+	enable_fscache(0);
 	/*
 	 * Use the multi-threaded preload_index() to refresh most of the
 	 * cache entries quickly then in the single threaded loop below,
@@ -1598,6 +1610,7 @@ int refresh_index(struct index_state *istate, unsigned int flags,
 	display_progress(progress, istate->cache_nr);
 	stop_progress(&progress);
 	trace_performance_leave("refresh index");
+	disable_fscache();
 	return has_errors;
 }
 
@@ -3485,8 +3498,8 @@ void *read_blob_data_from_index(struct index_state *istate,
 	}
 	if (pos < 0)
 		return NULL;
-	data = repo_read_object_file(the_repository, &istate->cache[pos]->oid,
-				     &type, &sz);
+	data = odb_read_object(the_repository->objects, &istate->cache[pos]->oid,
+			       &type, &sz);
 	if (!data || type != OBJ_BLOB) {
 		free(data);
 		return NULL;
@@ -3729,9 +3742,9 @@ void prefetch_cache_entries(const struct index_state *istate,
 
 		if (S_ISGITLINK(ce->ce_mode) || !must_prefetch(ce))
 			continue;
-		if (!oid_object_info_extended(the_repository, &ce->oid,
-					      NULL,
-					      OBJECT_INFO_FOR_PREFETCH))
+		if (!odb_read_object_info_extended(the_repository->objects,
+						   &ce->oid, NULL,
+						   OBJECT_INFO_FOR_PREFETCH))
 			continue;
 		oid_array_append(&to_fetch, &ce->oid);
 	}

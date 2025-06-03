@@ -302,7 +302,7 @@ static int do_read_blob(const struct object_id *oid, struct oid_stat *oid_stat,
 	*size_out = 0;
 	*data_out = NULL;
 
-	data = repo_read_object_file(the_repository, oid, &type, &sz);
+	data = odb_read_object(the_repository->objects, oid, &type, &sz);
 	if (!data || type != OBJ_BLOB) {
 		free(data);
 		return -1;
@@ -397,9 +397,12 @@ static int match_pathspec_item(struct index_state *istate,
 	    strncmp(item->match, name - prefix, item->prefix))
 		return 0;
 
-	if (item->attr_match_nr &&
-	    !match_pathspec_attrs(istate, name - prefix, namelen + prefix, item))
-		return 0;
+	if (item->attr_match_nr) {
+		if (!istate)
+			BUG("magic PATHSPEC_ATTR requires an index");
+		if (!match_pathspec_attrs(istate, name - prefix, namelen + prefix, item))
+			return 0;
+	}
 
 	/* If the match was just the prefix, we matched */
 	if (!*match)
@@ -573,6 +576,16 @@ int match_pathspec(struct index_state *istate,
 		   int prefix, char *seen, int is_dir)
 {
 	unsigned flags = is_dir ? DO_MATCH_DIRECTORY : 0;
+	return match_pathspec_with_flags(istate, ps, name, namelen,
+					 prefix, seen, flags);
+}
+
+int match_leading_pathspec(struct index_state *istate,
+			   const struct pathspec *ps,
+			   const char *name, int namelen,
+			   int prefix, char *seen, int is_dir)
+{
+	unsigned flags = is_dir ? DO_MATCH_DIRECTORY | DO_MATCH_LEADING_PATHSPEC : 0;
 	return match_pathspec_with_flags(istate, ps, name, namelen,
 					 prefix, seen, flags);
 }
@@ -1115,16 +1128,64 @@ static int add_patterns(const char *fname, const char *base, int baselen,
 	size_t size = 0;
 	char *buf;
 
-	if (flags & PATTERN_NOFOLLOW)
-		fd = open_nofollow(fname, O_RDONLY);
-	else
-		fd = open(fname, O_RDONLY);
-
-	if (fd < 0 || fstat(fd, &st) < 0) {
-		if (fd < 0)
-			warn_on_fopen_errors(fname);
+	/*
+	 * A performance optimization for status.
+	 *
+	 * During a status scan, git looks in each directory for a .gitignore
+	 * file before scanning the directory.  Since .gitignore files are not
+	 * that common, we can waste a lot of time looking for files that are
+	 * not there.  Fortunately, the fscache already knows if the directory
+	 * contains a .gitignore file, since it has already read the directory
+	 * and it already has the stat-data.
+	 *
+	 * If the fscache is enabled, use the fscache-lstat() interlude to see
+	 * if the file exists (in the fscache hash maps) before trying to open()
+	 * it.
+	 *
+	 * This causes problem when the .gitignore file is a symlink, because
+	 * we call lstat() rather than stat() on the symlnk and the resulting
+	 * stat-data is for the symlink itself rather than the target file.
+	 * We CANNOT use stat() here because the fscache DOES NOT install an
+	 * interlude for stat() and mingw_stat() always calls "open-fstat-close"
+	 * on the file and defeats the purpose of the optimization here.  Since
+	 * symlinks are even more rare than .gitignore files, we force a fstat()
+	 * after our open() to get stat-data for the target file.
+	 *
+	 * Since `clang`'s `-Wunreachable-code` mode is clever, it would figure
+	 * out that on non-Windows platforms, this `lstat()` is unreachable.
+	 * We do want to keep the conditional block for the sake of Windows,
+	 * though, so let's use the `NOT_CONSTANT()` trick to suppress that error.
+	 */
+	if (NOT_CONSTANT(is_fscache_enabled(fname))) {
+		if (lstat(fname, &st) < 0) {
+			fd = -1;
+		} else {
+			fd = open(fname, O_RDONLY);
+			if (fd < 0)
+				warn_on_fopen_errors(fname);
+			else if (S_ISLNK(st.st_mode) && fstat(fd, &st) < 0) {
+				warn_on_fopen_errors(fname);
+				close(fd);
+				fd = -1;
+			}
+		}
+	} else {
+		if (flags & PATTERN_NOFOLLOW)
+			fd = open_nofollow(fname, O_RDONLY);
 		else
-			close(fd);
+			fd = open(fname, O_RDONLY);
+
+		if (fd < 0 || fstat(fd, &st) < 0) {
+			if (fd < 0)
+				warn_on_fopen_errors(fname);
+			else {
+				close(fd);
+				fd = -1;
+			}
+		}
+	}
+
+	if (fd < 0) {
 		if (!istate)
 			return -1;
 		r = read_skip_worktree_file_from_index(istate, fname,

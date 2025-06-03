@@ -28,10 +28,12 @@
 #include "diff.h"
 #include "object-file.h"
 #include "object-name.h"
-#include "object-store.h"
+#include "odb.h"
 #include "advice.h"
 #include "branch.h"
 #include "list-objects-filter-options.h"
+#include "wildmatch.h"
+#include "strbuf.h"
 
 #define OPT_QUIET (1 << 0)
 #define OPT_CACHED (1 << 1)
@@ -303,7 +305,7 @@ static void runcommand_in_submodule_cb(const struct cache_entry *list_item,
 	char *displaypath;
 
 	if (validate_submodule_path(path) < 0)
-		exit(128);
+		die(NULL);
 
 	displaypath = get_submodule_displaypath(path, info->prefix,
 						info->super_prefix);
@@ -643,7 +645,7 @@ static void status_submodule(const char *path, const struct object_id *ce_oid,
 	};
 
 	if (validate_submodule_path(path) < 0)
-		exit(128);
+		die(NULL);
 
 	if (!submodule_from_path(the_repository, null_oid(the_hash_algo), path))
 		die(_("no submodule mapping found in .gitmodules for path '%s'"),
@@ -1257,7 +1259,7 @@ static void sync_submodule(const char *path, const char *prefix,
 		return;
 
 	if (validate_submodule_path(path) < 0)
-		exit(128);
+		die(NULL);
 
 	sub = submodule_from_path(the_repository, null_oid(the_hash_algo), path);
 
@@ -1402,7 +1404,7 @@ static void deinit_submodule(const char *path, const char *prefix,
 	char *sub_git_dir = xstrfmt("%s/.git", path);
 
 	if (validate_submodule_path(path) < 0)
-		exit(128);
+		die(NULL);
 
 	sub = submodule_from_path(the_repository, null_oid(the_hash_algo), path);
 
@@ -1582,7 +1584,7 @@ static const char alternate_error_advice[] = N_(
 );
 
 static int add_possible_reference_from_superproject(
-		struct object_directory *odb, void *sas_cb)
+		struct odb_alternate *alt_odb, void *sas_cb)
 {
 	struct submodule_alternate_setup *sas = sas_cb;
 	size_t len;
@@ -1591,12 +1593,12 @@ static int add_possible_reference_from_superproject(
 	 * If the alternate object store is another repository, try the
 	 * standard layout with .git/(modules/<name>)+/objects
 	 */
-	if (strip_suffix(odb->path, "/objects", &len)) {
+	if (strip_suffix(alt_odb->path, "/objects", &len)) {
 		struct repository alternate;
 		char *sm_alternate;
 		struct strbuf sb = STRBUF_INIT;
 		struct strbuf err = STRBUF_INIT;
-		strbuf_add(&sb, odb->path, len);
+		strbuf_add(&sb, alt_odb->path, len);
 
 		if (repo_init(&alternate, sb.buf, NULL) < 0)
 			die(_("could not get a repository handle for gitdir '%s'"),
@@ -1668,7 +1670,8 @@ static void prepare_possible_alternates(const char *sm_name,
 		die(_("Value '%s' for submodule.alternateErrorStrategy is not recognized"), error_strategy);
 
 	if (!strcmp(sm_alternate, "superproject"))
-		foreach_alt_odb(add_possible_reference_from_superproject, &sas);
+		odb_for_each_alternate(the_repository->objects,
+				       add_possible_reference_from_superproject, &sas);
 	else if (!strcmp(sm_alternate, "no"))
 		; /* do nothing */
 	else
@@ -1724,7 +1727,7 @@ static int clone_submodule(const struct module_clone_data *clone_data,
 	char *to_free = NULL;
 
 	if (validate_submodule_path(clone_data_path) < 0)
-		exit(128);
+		die(NULL);
 
 	if (!is_absolute_path(clone_data->path))
 		clone_data_path = to_free = xstrfmt("%s/%s", repo_get_work_tree(the_repository),
@@ -1933,6 +1936,9 @@ static int determine_submodule_update_strategy(struct repository *r,
 	char *key;
 	const char *val;
 	int ret;
+
+	if (!sub)
+		return error(_("could not retrieve submodule information for path '%s'"), path);
 
 	key = xstrfmt("submodule.%s.update", sub->name);
 
@@ -3323,6 +3329,24 @@ static int config_submodule_in_gitmodules(const char *name, const char *var, con
 	return ret;
 }
 
+static int submodule_active_matches_path(const char *path)
+{
+	const struct string_list *values;
+	size_t i;
+
+	if (git_config_get_string_multi("submodule.active", &values))
+		return 0;
+
+	for (i = 0; i < values->nr; i++) {
+		const char *pat = values->items[i].string;
+		if (!wildmatch(pat, path, 0))
+			return 1;
+	}
+
+	return 0;
+}
+
+
 static void configure_added_submodule(struct add_data *add_data)
 {
 	char *key;
@@ -3370,17 +3394,7 @@ static void configure_added_submodule(struct add_data *add_data)
 	 * is_submodule_active(), since that function needs to find
 	 * out the value of "submodule.active" again anyway.
 	 */
-	if (!git_config_get("submodule.active")) {
-		/*
-		 * If the submodule being added isn't already covered by the
-		 * current configured pathspec, set the submodule's active flag
-		 */
-		if (!is_submodule_active(the_repository, add_data->sm_path)) {
-			key = xstrfmt("submodule.%s.active", add_data->sm_name);
-			git_config_set_gently(key, "true");
-			free(key);
-		}
-	} else {
+	if (!submodule_active_matches_path(add_data->sm_path)) {
 		key = xstrfmt("submodule.%s.active", add_data->sm_name);
 		git_config_set_gently(key, "true");
 		free(key);
@@ -3444,6 +3458,10 @@ static int module_add(int argc, const char **argv, const char *prefix,
 	struct add_data add_data = ADD_DATA_INIT;
 	const char *ref_storage_format = NULL;
 	char *to_free = NULL;
+	const struct submodule *existing;
+	struct strbuf buf = STRBUF_INIT;
+	int i;
+	char *sm_name_to_free = NULL;
 	struct option options[] = {
 		OPT_STRING('b', "branch", &add_data.branch, N_("branch"),
 			   N_("branch of repository to add as submodule")),
@@ -3524,7 +3542,7 @@ static int module_add(int argc, const char **argv, const char *prefix,
 	strip_dir_trailing_slashes(add_data.sm_path);
 
 	if (validate_submodule_path(add_data.sm_path) < 0)
-		exit(128);
+		die(NULL);
 
 	die_on_index_match(add_data.sm_path, force);
 	die_on_repo_without_commits(add_data.sm_path);
@@ -3546,6 +3564,29 @@ static int module_add(int argc, const char **argv, const char *prefix,
 	if(!add_data.sm_name)
 		add_data.sm_name = add_data.sm_path;
 
+	existing = submodule_from_name(the_repository,
+					null_oid(the_hash_algo),
+					add_data.sm_name);
+
+	if (existing && strcmp(existing->path, add_data.sm_path)) {
+		if (!force) {
+			die(_("submodule name '%s' already used for path '%s'"),
+			add_data.sm_name, existing->path);
+		}
+
+		/* --force: build <name><n> until unique */
+		for (i = 1; ; i++) {
+			strbuf_reset(&buf);
+			strbuf_addf(&buf, "%s%d", add_data.sm_name, i);
+			if (!submodule_from_name(the_repository,
+						null_oid(the_hash_algo),
+						buf.buf)) {
+				break;
+			}
+		}
+
+		add_data.sm_name = sm_name_to_free = strbuf_detach(&buf, NULL);
+	}
 	if (check_submodule_name(add_data.sm_name))
 		die(_("'%s' is not a valid submodule name"), add_data.sm_name);
 
@@ -3561,6 +3602,7 @@ static int module_add(int argc, const char **argv, const char *prefix,
 
 	ret = 0;
 cleanup:
+	free(sm_name_to_free);
 	free(add_data.sm_path);
 	free(to_free);
 	strbuf_release(&sb);

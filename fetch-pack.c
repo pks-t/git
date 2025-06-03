@@ -24,7 +24,7 @@
 #include "oid-array.h"
 #include "oidset.h"
 #include "packfile.h"
-#include "object-store.h"
+#include "odb.h"
 #include "path.h"
 #include "connected.h"
 #include "fetch-negotiator.h"
@@ -115,7 +115,8 @@ static void for_each_cached_alternate(struct fetch_negotiator *negotiator,
 	size_t i;
 
 	if (!initialized) {
-		for_each_alternate_ref(cache_one_alternate, &cache);
+		odb_for_each_alternate_ref(the_repository->objects,
+					   cache_one_alternate, &cache);
 		initialized = 1;
 	}
 
@@ -141,21 +142,21 @@ static struct commit *deref_without_lazy_fetch(const struct object_id *oid,
 	commit = lookup_commit_in_graph(the_repository, oid);
 	if (commit) {
 		if (mark_tags_complete_and_check_obj_db) {
-			if (!has_object(the_repository, oid, 0))
+			if (!odb_has_object(the_repository->objects, oid, 0))
 				die_in_commit_graph_only(oid);
 		}
 		return commit;
 	}
 
 	while (1) {
-		if (oid_object_info_extended(the_repository, oid, &info,
-					     OBJECT_INFO_SKIP_FETCH_OBJECT | OBJECT_INFO_QUICK))
+		if (odb_read_object_info_extended(the_repository->objects, oid, &info,
+						  OBJECT_INFO_SKIP_FETCH_OBJECT | OBJECT_INFO_QUICK))
 			return NULL;
 		if (type == OBJ_TAG) {
 			struct tag *tag = (struct tag *)
 				parse_object(the_repository, oid);
 
-			if (!tag->tagged)
+			if (!tag || !tag->tagged)
 				return NULL;
 			if (mark_tags_complete_and_check_obj_db)
 				tag->object.flags |= COMPLETE;
@@ -762,6 +763,7 @@ static void mark_complete_and_common_ref(struct fetch_negotiator *negotiator,
 	save_commit_buffer = 0;
 
 	trace2_region_enter("fetch-pack", "parse_remote_refs_and_find_cutoff", NULL);
+	enable_fscache(0);
 	for (ref = *refs; ref; ref = ref->next) {
 		struct commit *commit;
 
@@ -769,7 +771,7 @@ static void mark_complete_and_common_ref(struct fetch_negotiator *negotiator,
 		if (!commit) {
 			struct object *o;
 
-			if (!has_object(the_repository, &ref->old_oid, 0))
+			if (!odb_has_object(the_repository->objects, &ref->old_oid, 0))
 				continue;
 			o = parse_object(the_repository, &ref->old_oid);
 			if (!o || o->type != OBJ_COMMIT)
@@ -786,6 +788,7 @@ static void mark_complete_and_common_ref(struct fetch_negotiator *negotiator,
 		if (!cutoff || cutoff < commit->date)
 			cutoff = commit->date;
 	}
+	disable_fscache();
 	trace2_region_leave("fetch-pack", "parse_remote_refs_and_find_cutoff", NULL);
 
 	/*
@@ -1983,8 +1986,8 @@ static void update_shallow(struct fetch_pack_args *args,
 		struct oid_array extra = OID_ARRAY_INIT;
 		struct object_id *oid = si->shallow->oid;
 		for (i = 0; i < si->shallow->nr; i++)
-			if (has_object(the_repository, &oid[i],
-				       HAS_OBJECT_RECHECK_PACKED | HAS_OBJECT_FETCH_PROMISOR))
+			if (odb_has_object(the_repository->objects, &oid[i],
+					   HAS_OBJECT_RECHECK_PACKED | HAS_OBJECT_FETCH_PROMISOR))
 				oid_array_append(&extra, &oid[i]);
 		if (extra.nr) {
 			setup_alternate_shallow(&shallow_lock,

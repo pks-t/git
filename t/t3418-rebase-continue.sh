@@ -82,7 +82,7 @@ test_expect_success 'rebase --continue remembers merge strategy and options' '
 
 	rm -f actual &&
 	(
-		PATH=./test-bin:$PATH &&
+		PATH=./test-bin$PATH_SEP$PATH &&
 		test_must_fail git rebase -s funny -X"option=arg with space" \
 				-Xop\"tion\\ -X"new${LF}line " main topic
 	) &&
@@ -91,7 +91,7 @@ test_expect_success 'rebase --continue remembers merge strategy and options' '
 	echo "Resolved" >F2 &&
 	git add F2 &&
 	(
-		PATH=./test-bin:$PATH &&
+		PATH=./test-bin$PATH_SEP$PATH &&
 		git rebase --continue
 	) &&
 	test_cmp expect actual
@@ -109,6 +109,30 @@ test_expect_success 'rebase -r passes merge strategy options correctly' '
 		-s recursive --strategy-option=theirs HEAD~2 &&
 	test_commit force-change-ours &&
 	git rebase --continue
+'
+
+test_expect_success '--continue creates merge commit after empty resolution' '
+	git reset --hard main &&
+	git checkout -b rebase_i_merge &&
+	test_commit unrelated &&
+	git checkout -b rebase_i_merge_side &&
+	test_commit side2 main.txt &&
+	git checkout rebase_i_merge &&
+	test_commit side1 main.txt &&
+	PICK=$(git rev-parse --short rebase_i_merge) &&
+	test_must_fail git merge rebase_i_merge_side &&
+	echo side1 >main.txt &&
+	git add main.txt &&
+	test_tick &&
+	git commit --no-edit &&
+
+	test_must_fail env FAKE_LINES="1 2 3 5 6 7 8 9 10 11" \
+		git rebase -ir main &&
+	echo side1 >main.txt &&
+	git add main.txt &&
+	git rebase --continue &&
+	git log --merges >out &&
+	test_grep "Merge branch .rebase_i_merge_side." out
 '
 
 test_expect_success '--skip after failed fixup cleans commit message' '

@@ -20,7 +20,7 @@
 #include "merge-ort-wrappers.h"
 #include "object-file.h"
 #include "object-name.h"
-#include "object-store.h"
+#include "odb.h"
 #include "parse-options.h"
 #include "path.h"
 #include "preload-index.h"
@@ -61,6 +61,8 @@ static const char * const restore_usage[] = {
 
 struct checkout_opts {
 	int patch_mode;
+	int patch_context;
+	int patch_interhunk_context;
 	int quiet;
 	int merge;
 	int force;
@@ -104,7 +106,12 @@ struct checkout_opts {
 	struct tree *source_tree;
 };
 
-#define CHECKOUT_OPTS_INIT { .conflict_style = -1, .merge = -1 }
+#define CHECKOUT_OPTS_INIT { \
+	.conflict_style = -1, \
+	.merge = -1, \
+	.patch_context = -1, \
+	.patch_interhunk_context = -1, \
+}
 
 struct branch_info {
 	char *name; /* The short name used */
@@ -408,6 +415,7 @@ static int checkout_worktree(const struct checkout_opts *opts,
 	if (pc_workers > 1)
 		init_parallel_checkout();
 
+	enable_fscache(the_repository->index->cache_nr);
 	for (pos = 0; pos < the_repository->index->cache_nr; pos++) {
 		struct cache_entry *ce = the_repository->index->cache[pos];
 		if (ce->ce_flags & CE_MATCHED) {
@@ -433,6 +441,7 @@ static int checkout_worktree(const struct checkout_opts *opts,
 		errs |= run_parallel_checkout(&state, pc_workers, pc_threshold,
 					      NULL, NULL);
 	mem_pool_discard(&ce_mem_pool, should_validate_cache_entries());
+	disable_fscache();
 	remove_marked_cache_entries(the_repository->index, 1);
 	remove_scheduled_dirs();
 	errs |= finish_delayed_checkout(&state, opts->show_progress);
@@ -539,6 +548,10 @@ static int checkout_paths(const struct checkout_opts *opts,
 
 	if (opts->patch_mode) {
 		enum add_p_mode patch_mode;
+		struct add_p_opt add_p_opt = {
+			.context = opts->patch_context,
+			.interhunkcontext = opts->patch_interhunk_context,
+		};
 		const char *rev = new_branch_info->name;
 		char rev_oid[GIT_MAX_HEXSZ + 1];
 
@@ -564,8 +577,13 @@ static int checkout_paths(const struct checkout_opts *opts,
 		else
 			BUG("either flag must have been set, worktree=%d, index=%d",
 			    opts->checkout_worktree, opts->checkout_index);
-		return !!run_add_p(the_repository, patch_mode, rev,
-				   &opts->pathspec);
+		return !!run_add_p(the_repository, patch_mode, &add_p_opt,
+				   rev, &opts->pathspec);
+	} else {
+		if (opts->patch_context != -1)
+			die(_("the option '%s' requires '%s'"), "--unified", "--patch");
+		if (opts->patch_interhunk_context != -1)
+			die(_("the option '%s' requires '%s'"), "--inter-hunk-context", "--patch");
 	}
 
 	repo_hold_locked_index(the_repository, &lock_file, LOCK_DIE_ON_ERROR);
@@ -838,7 +856,7 @@ static int merge_working_tree(const struct checkout_opts *opts,
 		init_tree_desc(&trees[0], &tree->object.oid,
 			       tree->buffer, tree->size);
 		if (parse_tree(new_tree) < 0)
-			exit(128);
+			die(NULL);
 		tree = new_tree;
 		init_tree_desc(&trees[1], &tree->object.oid,
 			       tree->buffer, tree->size);
@@ -913,7 +931,7 @@ static int merge_working_tree(const struct checkout_opts *opts,
 						     work,
 						     old_tree);
 			if (ret < 0)
-				exit(128);
+				die(NULL);
 			ret = reset_tree(new_tree,
 					 opts, 0,
 					 writeout_error, new_branch_info);
@@ -1738,6 +1756,8 @@ static struct option *add_checkout_path_options(struct checkout_opts *opts,
 			      N_("checkout their version for unmerged files"),
 			      3, PARSE_OPT_NONEG),
 		OPT_BOOL('p', "patch", &opts->patch_mode, N_("select hunks interactively")),
+		OPT_DIFF_UNIFIED(&opts->patch_context),
+		OPT_DIFF_INTERHUNK_CONTEXT(&opts->patch_interhunk_context),
 		OPT_BOOL(0, "ignore-skip-worktree-bits", &opts->ignore_skipworktree,
 			 N_("do not limit pathspecs to sparse entries only")),
 		OPT_PATHSPEC_FROM_FILE(&opts->pathspec_from_file),

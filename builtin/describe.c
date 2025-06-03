@@ -19,7 +19,7 @@
 #include "setup.h"
 #include "strvec.h"
 #include "run-command.h"
-#include "object-store.h"
+#include "odb.h"
 #include "list-objects.h"
 #include "commit-slab.h"
 #include "wildmatch.h"
@@ -324,6 +324,8 @@ static void describe_commit(struct object_id *oid, struct strbuf *dst)
 	unsigned int unannotated_cnt = 0;
 
 	cmit = lookup_commit_reference(the_repository, oid);
+	if (!cmit)
+		die(_("could not look up commit '%s'"), oid_to_hex(oid));
 
 	n = find_commit_name(&cmit->object.oid);
 	if (n && (tags || all || n->prio == 2)) {
@@ -552,7 +554,8 @@ static void describe(const char *arg, int last_one)
 
 	if (cmit)
 		describe_commit(&oid, &sb);
-	else if (oid_object_info(the_repository, &oid, NULL) == OBJ_BLOB)
+	else if (odb_read_object_info(the_repository->objects,
+				      &oid, NULL) == OBJ_BLOB)
 		describe_blob(oid, &sb);
 	else
 		die(_("%s is neither a commit nor blob"), arg);

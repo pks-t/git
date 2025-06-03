@@ -15,6 +15,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see https://www.gnu.org/licenses/ .
 
+# On Unix/Linux, the path separator is the colon, on other systems it
+# may be different, though. On Windows, for example, it is a semicolon.
+# If the PATH variable contains semicolons, it is pretty safe to assume
+# that the path separator is a semicolon.
+case "$PATH" in
+*\;*) PATH_SEP=\; ;;
+*) PATH_SEP=: ;;
+esac
+
 # Test the binaries we have just built.  The tests are kept in
 # t/ subdirectory and are run in 'trash directory' subdirectory.
 if test -z "$TEST_DIRECTORY"
@@ -470,7 +479,7 @@ then
 	then
 		: Executed by a Bash version supporting BASH_XTRACEFD.  Good.
 	else
-		echo >&2 "warning: ignoring -x; '$0' is untraceable without BASH_XTRACEFD"
+		echo >&2 "# warning: ignoring -x; '$0' is untraceable without BASH_XTRACEFD"
 		trace=
 	fi
 fi
@@ -707,7 +716,7 @@ then
 	exec 3>>"$GIT_TEST_TEE_OUTPUT_FILE" 4>&3
 elif test "$verbose" = "t"
 then
-	exec 4>&2 3>&1
+	exec 4>&2 3>&2
 else
 	exec 4>/dev/null 3>/dev/null
 fi
@@ -949,7 +958,7 @@ maybe_setup_verbose () {
 	test -z "$verbose_only" && return
 	if match_pattern_list $test_count "$verbose_only"
 	then
-		exec 4>&2 3>&1
+		exec 4>&2 3>&2
 		# Emit a delimiting blank line when going from
 		# non-verbose to verbose.  Within verbose mode the
 		# delimiter is printed by test_expect_*.  The choice
@@ -1272,7 +1281,14 @@ test_done () {
 
 		check_test_results_san_file_ "$test_failure"
 
-		if test -z "$skip_all" && test -n "$invert_exit_code"
+		if test "$test_fixed" != 0
+		then
+			if test -z "$invert_exit_code"
+			then
+				GIT_EXIT_OK=t
+				exit 1
+			fi
+		elif test -z "$skip_all" && test -n "$invert_exit_code"
 		then
 			say_color warn "# faking up non-zero exit with --invert-exit-code"
 			GIT_EXIT_OK=t
@@ -1375,7 +1391,7 @@ then
 		done
 	done
 	IFS=$OLDIFS
-	PATH=$GIT_VALGRIND/bin:$PATH
+	PATH=$GIT_VALGRIND/bin$PATH_SEP$PATH
 	GIT_EXEC_PATH=$GIT_VALGRIND/bin
 	export GIT_VALGRIND
 	GIT_VALGRIND_MODE="$valgrind"
@@ -1387,7 +1403,7 @@ elif test -n "$GIT_TEST_INSTALLED"
 then
 	GIT_EXEC_PATH=$($GIT_TEST_INSTALLED/git --exec-path)  ||
 	error "Cannot run git from $GIT_TEST_INSTALLED."
-	PATH=$GIT_TEST_INSTALLED:$GIT_BUILD_DIR/t/helper:$PATH
+	PATH=$GIT_TEST_INSTALLED$PATH_SEP$GIT_BUILD_DIR/t/helper$PATH_SEP$PATH
 	GIT_EXEC_PATH=${GIT_TEST_EXEC_PATH:-$GIT_EXEC_PATH}
 else # normal case, use ../bin-wrappers only unless $with_dashes:
 	if test -n "$no_bin_wrappers"
@@ -1403,12 +1419,12 @@ else # normal case, use ../bin-wrappers only unless $with_dashes:
 			fi
 			with_dashes=t
 		fi
-		PATH="$git_bin_dir:$PATH"
+		PATH="$git_bin_dir$PATH_SEP$PATH"
 	fi
 	GIT_EXEC_PATH=$GIT_BUILD_DIR
 	if test -n "$with_dashes"
 	then
-		PATH="$GIT_BUILD_DIR:$GIT_BUILD_DIR/t/helper:$PATH"
+		PATH="$GIT_BUILD_DIR$PATH_SEP$GIT_BUILD_DIR/t/helper$PATH_SEP$PATH"
 	fi
 fi
 GIT_TEMPLATE_DIR="$GIT_TEST_TEMPLATE_DIR"
@@ -1577,6 +1593,8 @@ fi
 # Use -P to resolve symlinks in our working directory so that the cwd
 # in subprocesses like git equals our $PWD (for pathname comparisons).
 cd -P "$TRASH_DIRECTORY" || BAIL_OUT "cannot cd -P to \"$TRASH_DIRECTORY\""
+TRASH_DIRECTORY=$(pwd)
+HOME="$TRASH_DIRECTORY"
 
 start_test_output "$0"
 
@@ -1636,18 +1654,34 @@ fi
 # Fix some commands on Windows, and other OS-specific things
 uname_s=$(uname -s)
 case $uname_s in
+Darwin)
+	test_set_prereq MACOS
+	;;
 *MINGW*)
-	# Windows has its own (incompatible) sort and find
-	sort () {
-		/usr/bin/sort "$@"
-	}
-	find () {
-		/usr/bin/find "$@"
-	}
-	# git sees Windows-style pwd
-	pwd () {
-		builtin pwd -W
-	}
+	if test -x /usr/bin/sort
+	then
+		# Windows has its own (incompatible) sort; override
+		sort () {
+			/usr/bin/sort "$@"
+		}
+	fi
+	if test -x /usr/bin/find
+	then
+		# Windows has its own (incompatible) find; override
+		find () {
+			/usr/bin/find "$@"
+		}
+	fi
+	# On Windows, Git wants Windows paths. But /usr/bin/pwd spits out
+	# Unix-style paths. At least in Bash, we have a builtin pwd that
+	# understands the -W option to force "mixed" paths, i.e. with drive
+	# prefix but still with forward slashes. Let's use that, if available.
+	if type builtin >/dev/null 2>&1
+	then
+		pwd () {
+			builtin pwd -W
+		}
+	fi
 	# no POSIX permissions
 	# backslashes in pathspec are converted to '/'
 	# exec does not inherit the PID
@@ -1657,6 +1691,12 @@ case $uname_s in
 	test_set_prereq GREP_STRIPS_CR
 	test_set_prereq WINDOWS
 	GIT_TEST_CMP="GIT_DIR=/dev/null git diff --no-index --ignore-cr-at-eol --"
+	if ! type iconv >/dev/null 2>&1
+	then
+		iconv () {
+			test-tool iconv "$@"
+		}
+	fi
 	;;
 *CYGWIN*)
 	test_set_prereq POSIXPERM
@@ -1824,6 +1864,10 @@ GIT_UNZIP=${GIT_UNZIP:-unzip}
 test_lazy_prereq UNZIP '
 	"$GIT_UNZIP" -v
 	test $? -ne 127
+'
+
+test_lazy_prereq BUSYBOX '
+	case "$($SHELL --help 2>&1)" in *BusyBox*) true;; *) false;; esac
 '
 
 run_with_limited_cmdline () {

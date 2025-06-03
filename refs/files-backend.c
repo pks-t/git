@@ -2053,7 +2053,7 @@ static int create_ref_symlink(struct ref_lock *lock, const char *target)
 
 	char *ref_path = get_locked_file_path(&lock->lk);
 	unlink(ref_path);
-	ret = symlink(target, ref_path);
+	ret = create_symlink(NULL, target, ref_path);
 	free(ref_path);
 
 	if (ret)
@@ -3762,6 +3762,9 @@ static int files_fsck_refs_dir(struct ref_store *ref_store,
 
 	iter = dir_iterator_begin(sb.buf, 0);
 	if (!iter) {
+		if (errno == ENOENT && !is_main_worktree(wt))
+			goto out;
+
 		ret = error_errno(_("cannot open directory %s"), sb.buf);
 		goto out;
 	}

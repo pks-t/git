@@ -3,12 +3,12 @@
 
 #include "git-zlib.h"
 #include "object.h"
-#include "object-store.h"
+#include "odb.h"
 
 struct index_state;
 
 /*
- * Set this to 0 to prevent oid_object_info_extended() from fetching missing
+ * Set this to 0 to prevent odb_read_object_info_extended() from fetching missing
  * blobs. This has a difference only if extensions.partialClone is set.
  *
  * Its default value is 1.
@@ -24,23 +24,23 @@ enum {
 int index_fd(struct index_state *istate, struct object_id *oid, int fd, struct stat *st, enum object_type type, const char *path, unsigned flags);
 int index_path(struct index_state *istate, struct object_id *oid, const char *path, struct stat *st, unsigned flags);
 
-struct object_directory;
+struct odb_alternate;
 
 /*
  * Populate and return the loose object cache array corresponding to the
  * given object ID.
  */
-struct oidtree *odb_loose_cache(struct object_directory *odb,
+struct oidtree *odb_loose_cache(struct odb_alternate *alternate,
 				const struct object_id *oid);
 
 /* Empty the loose object cache for the specified object directory. */
-void odb_clear_loose_cache(struct object_directory *odb);
+void odb_clear_loose_cache(struct odb_alternate *alternate);
 
 /*
  * Put in `buf` the name of the file in the local object database that
  * would be used to store a loose object with the specified oid.
  */
-const char *odb_loose_path(struct object_directory *odb,
+const char *odb_loose_path(struct odb_alternate *alternate,
 			   struct strbuf *buf,
 			   const struct object_id *oid);
 
@@ -172,7 +172,7 @@ enum {
 	WRITE_OBJECT_FILE_SILENT = (1 << 1),
 };
 
-int write_object_file_flags(const void *buf, unsigned long len,
+int write_object_file_flags(const void *buf, size_t len,
 			    enum object_type type, struct object_id *oid,
 			    struct object_id *compat_oid_in, unsigned flags);
 static inline int write_object_file(const void *buf, unsigned long len,
@@ -223,7 +223,7 @@ int finalize_object_file_flags(const char *tmpfile, const char *filename,
 			       enum finalize_object_file_flags flags);
 
 void hash_object_file(const struct git_hash_algo *algo, const void *buf,
-		      unsigned long len, enum object_type type,
+		      size_t len, enum object_type type,
 		      struct object_id *oid);
 
 /* Helper to check and "touch" a file */
