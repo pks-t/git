@@ -50,7 +50,7 @@ test_expect_success 'receive-pack missing objects fails connectivity check' '
 	git -C repo commit --allow-empty -m 2 &&
 
 	write_script receive-pack-wrapper <<-EOF &&
-	tee "$(pwd)/out" | git-receive-pack "\$@"
+	tee "$(pwd)/out" | git-receive-pack
 	EOF
 
 	# Capture git-send-pack(1) output sent to git-receive-pack(1).
@@ -75,7 +75,7 @@ test_expect_success 'receive-pack missing objects bypasses connectivity check' '
 	git -C repo commit --allow-empty -m 2 &&
 
 	write_script receive-pack-wrapper <<-EOF &&
-	tee "$(pwd)/out" | git-receive-pack "\$@"
+	tee "$(pwd)/out" | git-receive-pack
 	EOF
 
 	# Capture git-send-pack(1) output sent to git-receive-pack(1).
