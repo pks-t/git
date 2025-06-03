@@ -49,9 +49,13 @@ test_expect_success 'receive-pack missing objects fails connectivity check' '
 	git clone --bare repo setup.git &&
 	git -C repo commit --allow-empty -m 2 &&
 
+	write_script receive-pack-wrapper <<-EOF &&
+	tee "$(pwd)/out" | git-receive-pack "\$@"
+	EOF
+
 	# Capture git-send-pack(1) output sent to git-receive-pack(1).
 	git -C repo send-pack ../setup.git --all \
-		--receive-pack="tee ../out | git receive-pack" &&
+		--receive-pack="${SQ}$(pwd)${SQ}/receive-pack-wrapper" &&
 
 	# Replay captured git-send-pack(1) output on new empty repository.
 	git init --bare remote.git &&
@@ -70,9 +74,13 @@ test_expect_success 'receive-pack missing objects bypasses connectivity check' '
 	git clone --bare repo setup.git &&
 	git -C repo commit --allow-empty -m 2 &&
 
+	write_script receive-pack-wrapper <<-EOF &&
+	tee "$(pwd)/out" | git-receive-pack "\$@"
+	EOF
+
 	# Capture git-send-pack(1) output sent to git-receive-pack(1).
 	git -C repo send-pack ../setup.git --all \
-		--receive-pack="tee ../out | git receive-pack" &&
+		--receive-pack="${SQ}$(pwd)${SQ}/receive-pack-wrapper" &&
 
 	# Replay captured git-send-pack(1) output on new empty repository.
 	git init --bare remote.git &&
